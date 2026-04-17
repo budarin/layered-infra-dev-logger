@@ -1,0 +1,40 @@
+{
+    "name": "@budarin/layered-infra-dev-logger",
+    "version": "1.0.0",
+    "description": "Infrastructure-focused dev logger toolkit for layered architectures.",
+    "license": "MIT",
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        }
+    },
+    "files": [
+        "dist"
+    ],
+    "keywords": [
+        "logger",
+        "devtools",
+        "layered-architecture",
+        "typescript",
+        "debugging"
+    ],
+    "devDependencies": {
+        "typescript": "^6.0.3",
+        "vitest": "^4.1.4"
+    },
+    "scripts": {
+        "build": "tsc",
+        "test": "vitest run",
+        "type-check": "tsc -b -noEmit",
+        "test:watch": "vitest",
+        "clear-caches": "sh scripts/clear-caches.sh",
+        "pnpm-install": "pnpm install",
+        "sync-workspace": "sh scripts/sync-workspace.sh",
+        "upgrade-deps": "sh scripts/upgrade-deps.sh",
+        "publish-package": "pnpm build && pnpm publish --access=public"
+    }
+}
