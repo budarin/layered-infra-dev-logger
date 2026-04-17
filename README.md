@@ -1,6 +1,32 @@
-# layered-infra-dev-logger
+# @budarin/layered-infra-dev-logger
 
 Infrastructure-focused dev logger toolkit for layered architectures.
+
+## Supported runtimes
+
+The package is written against **`globalThis`** (with guarded fallbacks to standard intrinsics). It is safe to import and call **`createLayeredLoggerToolkit()`** in:
+
+- **Browser** (document + full Web APIs)
+- **Service worker** (no `window`, often no `localStorage`)
+- **Node.js** (including Vitest / `node:test` and other test runners in the default Node realm)
+
+You do not need consumer-side shims such as `globalThis.window = globalThis` for this library.
+
+### Global control (`globalControl`)
+
+- By default, control is attached with `Object.defineProperty` on **`globalThis`** (override with `globalControl.target`).
+- Attachment is **best effort**: if `defineProperty` is missing, not callable, or throws (non-configurable property, sealed object, revoked proxy, and similar cases), the failure is swallowed and the rest of the toolkit still works. **`control`** on the returned toolkit is always available.
+- In browsers, when attachment succeeds, DevTools usage matches previous behavior (e.g. `globalThis.logger`).
+
+### Persistence (`persistence`)
+
+- Default persistence looks for **`localStorage`** on `globalThis`. If it is missing or does not expose `getItem` / `setItem` / `removeItem` as functions, persistence is **silently disabled** (no throws).
+- You can pass a custom `persistence.storage` adapter in any environment.
+- Invalid or unreadable stored payloads are cleared **best effort**; errors during read, parse, or cleanup are not propagated to the caller.
+
+### Console output
+
+- Log methods resolve **`globalThis.console`** on each emit. If `console` or a level method is missing, that emit is a no-op (no throw).
 
 ## Features
 
@@ -16,13 +42,13 @@ Infrastructure-focused dev logger toolkit for layered architectures.
 ## Install
 
 ```bash
-pnpm add layered-infra-dev-logger
+pnpm add @budarin/layered-infra-dev-logger
 ```
 
 ## Quick Start
 
 ```ts
-import { createLayeredLoggerToolkit } from 'layered-infra-dev-logger';
+import { createLayeredLoggerToolkit } from '@budarin/layered-infra-dev-logger';
 
 // Defaults already enabled:
 // - global control in DevTools console: globalThis.logger
@@ -39,7 +65,7 @@ coreLogger.debug('sync failed', { code: 'E_TIMEOUT', todoId: '019...' });
 ## Layered Project Setup (Composition Root)
 
 ```ts
-import { createLayeredLoggerToolkit, createLayeredLoggers } from 'layered-infra-dev-logger';
+import { createLayeredLoggerToolkit, createLayeredLoggers } from '@budarin/layered-infra-dev-logger';
 
 // 1) Create one toolkit in bootstrap/composition root.
 const toolkit = createLayeredLoggerToolkit();
@@ -200,3 +226,4 @@ Examples:
 
 - This package is intended for development-time logging and filtering.
 - State persistence is best-effort; invalid or broken storage payload is auto-reset.
+- Built-in globals (`Date`, `JSON`, `Object`, …) are read via `globalThis` when present so the same bundle works across browser, worker, and Node without referencing `window`.

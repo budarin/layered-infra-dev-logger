@@ -172,6 +172,102 @@ const LOGGER_DEFAULT_STORAGE_KEY = '__layeredInfraDevLoggerState__';
 const LOGGER_DEFAULT_GLOBAL_KEY = 'logger';
 const LOGGER_DEFAULT_MAX_ARGS_TEXT = 8_192;
 
+function safeGlobalThis(): typeof globalThis {
+    try {
+        if (typeof globalThis === 'object' && globalThis !== null) {
+            return globalThis;
+        }
+    } catch {
+        /* ignore */
+    }
+
+    return {} as typeof globalThis;
+}
+
+function readGlobalProperty(key: string): unknown {
+    try {
+        return Reflect.get(safeGlobalThis(), key);
+    } catch {
+        return undefined;
+    }
+}
+
+function pickConstructor<C extends abstract new (...args: never) => unknown>(
+    key: string,
+    intrinsic: C
+): C {
+    try {
+        const value = readGlobalProperty(key);
+        if (typeof value === 'function') {
+            return value as C;
+        }
+    } catch {
+        /* ignore */
+    }
+
+    return intrinsic;
+}
+
+function pickJSON(): JSON {
+    try {
+        const value = readGlobalProperty('JSON');
+        if (
+            typeof value === 'object' &&
+            value !== null &&
+            typeof (value as JSON).parse === 'function' &&
+            typeof (value as JSON).stringify === 'function'
+        ) {
+            return value as JSON;
+        }
+    } catch {
+        /* ignore */
+    }
+
+    return JSON;
+}
+
+/** Safe builtins and console: reads from globalThis when present, otherwise intrinsics / no-op. */
+const host = {
+    Array: pickConstructor('Array', Array),
+    Date: pickConstructor('Date', Date),
+    Error: pickConstructor('Error', Error),
+    JSON: pickJSON(),
+    Number: pickConstructor('Number', Number),
+    Object: pickConstructor('Object', Object),
+    RegExp: pickConstructor('RegExp', RegExp),
+    Set: pickConstructor('Set', Set),
+    String: pickConstructor('String', String),
+    WeakSet: pickConstructor('WeakSet', WeakSet),
+} as const;
+
+const noopLogMethod = (): void => undefined;
+
+function pickConsoleMethod(
+    consoleObject: unknown,
+    methodName: LoggerMethodName
+): (...args: readonly unknown[]) => void {
+    try {
+        if (typeof consoleObject !== 'object' || consoleObject === null) {
+            return noopLogMethod;
+        }
+
+        const method = Reflect.get(consoleObject, methodName);
+        if (typeof method !== 'function') {
+            return noopLogMethod;
+        }
+
+        return (...args: readonly unknown[]) => {
+            try {
+                Reflect.apply(method, consoleObject, args);
+            } catch {
+                /* ignore */
+            }
+        };
+    } catch {
+        return noopLogMethod;
+    }
+}
+
 function defaultScopeNormalizer(segment: string): string {
     return segment.replace(/\s+/g, '').toUpperCase();
 }
@@ -239,7 +335,7 @@ function toIsoTimestamp(timestampMs: number | undefined): string | undefined {
         return undefined;
     }
 
-    return new window.Date(timestampMs).toISOString();
+    return new host.Date(timestampMs).toISOString();
 }
 
 function selectorToString(selector: LayeredLoggerSelector): string {
@@ -261,7 +357,7 @@ function selectorToString(selector: LayeredLoggerSelector): string {
 
 function toRuleView(rule: LayeredLoggerRule): LayeredLoggerRuleView {
     return {
-        createdAtIso: new window.Date(rule.createdAtMs).toISOString(),
+        createdAtIso: new host.Date(rule.createdAtMs).toISOString(),
         hits: rule.hits,
         id: rule.id,
         kind: rule.kind,
@@ -303,7 +399,7 @@ function parseLevels(rawLevels: string | undefined): readonly LoggerMethodName[]
         return LOGGER_STAR_SELECTOR;
     }
 
-    const levelSet = new window.Set<LoggerMethodName>();
+    const levelSet = new host.Set<LoggerMethodName>();
     for (const chunk of chunks) {
         if (
             chunk !== 'trace' &&
@@ -408,7 +504,7 @@ function matchesGlob(pattern: string, value: string): boolean {
         .split(LOGGER_STAR_SELECTOR)
         .map((part) => escapeRegexChars(part))
         .join('.*')}$`;
-    const matcher = new window.RegExp(regexSource, 'i');
+    const matcher = new host.RegExp(regexSource, 'i');
     return matcher.test(value);
 }
 
@@ -491,11 +587,11 @@ function extractMessageForFiltering(args: readonly unknown[]): string {
         return firstArg;
     }
 
-    if (firstArg instanceof window.Error) {
+    if (firstArg instanceof host.Error) {
         return firstArg.message;
     }
 
-    return window.String(firstArg);
+    return host.String(firstArg);
 }
 
 function toSerializableError(error: Error): {
@@ -516,7 +612,7 @@ function safeSerializeArg(value: unknown): string {
     }
 
     if (typeof value === 'number' || typeof value === 'boolean' || value === null) {
-        return window.String(value);
+        return host.String(value);
     }
 
     if (typeof value === 'undefined') {
@@ -536,15 +632,15 @@ function safeSerializeArg(value: unknown): string {
         return `[Function:${functionName}]`;
     }
 
-    if (value instanceof window.Error) {
-        return window.JSON.stringify(toSerializableError(value));
+    if (value instanceof host.Error) {
+        return host.JSON.stringify(toSerializableError(value));
     }
 
     if (typeof value === 'object') {
-        const seenObjects = new window.WeakSet<object>();
+        const seenObjects = new host.WeakSet<object>();
         try {
-            const serialized = window.JSON.stringify(value, (_key, nestedValue: unknown) => {
-                if (nestedValue instanceof window.Error) {
+            const serialized = host.JSON.stringify(value, (_key, nestedValue: unknown) => {
+                if (nestedValue instanceof host.Error) {
                     return toSerializableError(nestedValue);
                 }
 
@@ -571,13 +667,13 @@ function safeSerializeArg(value: unknown): string {
 
                 return nestedValue;
             });
-            return serialized ?? window.String(value);
+            return serialized ?? host.String(value);
         } catch {
-            return window.String(value);
+            return host.String(value);
         }
     }
 
-    return window.String(value);
+    return host.String(value);
 }
 
 function extractArgsForFiltering(args: readonly unknown[], maxTextLength: number): string {
@@ -685,7 +781,7 @@ function selectorMatchesRule(
 }
 
 function isNumberArray(value: LayeredLoggerRemoveTarget): value is readonly number[] {
-    if (!window.Array.isArray(value)) {
+    if (!host.Array.isArray(value)) {
         return false;
     }
 
@@ -703,8 +799,8 @@ function parseIdList(value: string): readonly number[] {
 
     const parsed: number[] = [];
     for (const chunk of chunks) {
-        const parsedNumber = window.Number(chunk);
-        if (!window.Number.isInteger(parsedNumber)) {
+        const parsedNumber = host.Number(chunk);
+        if (!host.Number.isInteger(parsedNumber)) {
             return [];
         }
 
@@ -727,13 +823,13 @@ function resolveRulesByTarget(
     }
 
     if (isNumberArray(target)) {
-        const idSet = new window.Set(target);
+        const idSet = new host.Set(target);
         return state.rules.filter((rule) => idSet.has(rule.id));
     }
 
     const idList = parseIdList(target);
     if (idList.length > 0) {
-        const idSet = new window.Set(idList);
+        const idSet = new host.Set(idList);
         return state.rules.filter((rule) => idSet.has(rule.id));
     }
 
@@ -791,28 +887,28 @@ function resolveStorage(options: LayeredLoggerOptions): LayeredLoggerStorage | u
         return options.persistence.storage;
     }
 
-    if (typeof globalThis !== 'object' || globalThis === null) {
+    try {
+        const storageCandidate = Reflect.get(safeGlobalThis(), 'localStorage');
+        if (typeof storageCandidate !== 'object' || storageCandidate === null) {
+            return undefined;
+        }
+
+        if (!('getItem' in storageCandidate) || typeof storageCandidate.getItem !== 'function') {
+            return undefined;
+        }
+
+        if (!('setItem' in storageCandidate) || typeof storageCandidate.setItem !== 'function') {
+            return undefined;
+        }
+
+        if (!('removeItem' in storageCandidate) || typeof storageCandidate.removeItem !== 'function') {
+            return undefined;
+        }
+
+        return storageCandidate as LayeredLoggerStorage;
+    } catch {
         return undefined;
     }
-
-    const storageCandidate = Reflect.get(globalThis, 'localStorage');
-    if (typeof storageCandidate !== 'object' || storageCandidate === null) {
-        return undefined;
-    }
-
-    if (!('getItem' in storageCandidate) || typeof storageCandidate.getItem !== 'function') {
-        return undefined;
-    }
-
-    if (!('setItem' in storageCandidate) || typeof storageCandidate.setItem !== 'function') {
-        return undefined;
-    }
-
-    if (!('removeItem' in storageCandidate) || typeof storageCandidate.removeItem !== 'function') {
-        return undefined;
-    }
-
-    return storageCandidate;
 }
 
 function isValidPersistedRuleKind(value: unknown): value is LayeredLoggerRuleKind {
@@ -839,13 +935,13 @@ function isPersistedStateCandidate(value: unknown): value is LayeredLoggerPersis
     if (
         !('nextRuleId' in value) ||
         typeof value.nextRuleId !== 'number' ||
-        !window.Number.isInteger(value.nextRuleId) ||
+        !host.Number.isInteger(value.nextRuleId) ||
         value.nextRuleId < 1
     ) {
         return false;
     }
 
-    if (!('rules' in value) || !window.Array.isArray(value.rules)) {
+    if (!('rules' in value) || !host.Array.isArray(value.rules)) {
         return false;
     }
 
@@ -857,7 +953,7 @@ function isPersistedStateCandidate(value: unknown): value is LayeredLoggerPersis
         if (
             !('id' in rule) ||
             typeof rule.id !== 'number' ||
-            !window.Number.isInteger(rule.id) ||
+            !host.Number.isInteger(rule.id) ||
             rule.id < 1
         ) {
             return false;
@@ -866,7 +962,7 @@ function isPersistedStateCandidate(value: unknown): value is LayeredLoggerPersis
         if (
             !('createdAtMs' in rule) ||
             typeof rule.createdAtMs !== 'number' ||
-            !window.Number.isFinite(rule.createdAtMs)
+            !host.Number.isFinite(rule.createdAtMs)
         ) {
             return false;
         }
@@ -874,7 +970,7 @@ function isPersistedStateCandidate(value: unknown): value is LayeredLoggerPersis
         if (
             !('hits' in rule) ||
             typeof rule.hits !== 'number' ||
-            !window.Number.isInteger(rule.hits) ||
+            !host.Number.isInteger(rule.hits) ||
             rule.hits < 0
         ) {
             return false;
@@ -898,7 +994,7 @@ function isPersistedStateCandidate(value: unknown): value is LayeredLoggerPersis
 
         if (
             !('scopeSegments' in selector) ||
-            !window.Array.isArray(selector.scopeSegments) ||
+            !host.Array.isArray(selector.scopeSegments) ||
             selector.scopeSegments.some((segment: unknown) => typeof segment !== 'string')
         ) {
             return false;
@@ -945,7 +1041,7 @@ function isPersistedStateCandidate(value: unknown): value is LayeredLoggerPersis
         }
 
         if (selector.levels !== LOGGER_STAR_SELECTOR) {
-            if (!window.Array.isArray(selector.levels)) {
+            if (!host.Array.isArray(selector.levels)) {
                 return false;
             }
 
@@ -980,7 +1076,7 @@ function hydrateState(
             return undefined;
         }
 
-        const parsed: unknown = window.JSON.parse(raw);
+        const parsed: unknown = host.JSON.parse(raw);
         if (!isPersistedStateCandidate(parsed)) {
             storage.removeItem(storageKey);
             return undefined;
@@ -1010,7 +1106,7 @@ function persistState(
     try {
         storage.setItem(
             storageKey,
-            window.JSON.stringify({
+            host.JSON.stringify({
                 baselineMode: state.baselineMode,
                 nextRuleId: state.nextRuleId,
                 rules: state.rules.map((rule) => cloneRule(rule)),
@@ -1028,13 +1124,32 @@ function attachGlobalControl(options: LayeredLoggerOptions, control: LayeredLogg
     }
 
     const key = options.globalControl?.key ?? LOGGER_DEFAULT_GLOBAL_KEY;
-    const target = options.globalControl?.target ?? globalThis;
-    window.Object.defineProperty(target, key, {
-        configurable: true,
-        enumerable: false,
-        value: control,
-        writable: true,
-    });
+    let target: object;
+    try {
+        target = (options.globalControl?.target ?? safeGlobalThis()) as object;
+    } catch {
+        try {
+            target = safeGlobalThis() as object;
+        } catch {
+            return;
+        }
+    }
+
+    try {
+        const defineProperty = host.Object.defineProperty;
+        if (typeof defineProperty !== 'function') {
+            return;
+        }
+
+        defineProperty(target, key, {
+            configurable: true,
+            enumerable: false,
+            value: control,
+            writable: true,
+        });
+    } catch {
+        /* best-effort: non-configurable property, sealed object, revoked proxy, etc. */
+    }
 }
 
 function registerLoggerAlias(
@@ -1050,7 +1165,7 @@ function registerLoggerAlias(
         }
 
         if (normalizedAlias in namedLoggers) {
-            throw new window.Error(`Duplicate logger alias: ${normalizedAlias}`);
+            throw new host.Error(`Duplicate logger alias: ${normalizedAlias}`);
         }
 
         namedLoggers[normalizedAlias] = logger;
@@ -1062,7 +1177,7 @@ function collectLayeredLoggers(
     layers: LayeredLoggerLayerTree,
     namedLoggers: Record<string, LayeredLogger>
 ): void {
-    for (const [rawSegment, node] of window.Object.entries(layers)) {
+    for (const [rawSegment, node] of host.Object.entries(layers)) {
         const segment = defaultScopeNormalizer(rawSegment);
         if (segment === '') {
             continue;
@@ -1150,7 +1265,7 @@ export function createLayeredLoggerToolkit(
 
         pushHistorySnapshot();
         const rule: LayeredLoggerRule = {
-            createdAtMs: window.Date.now(),
+            createdAtMs: host.Date.now(),
             hits: 0,
             id: state.nextRuleId,
             kind,
@@ -1172,7 +1287,7 @@ export function createLayeredLoggerToolkit(
             return createRulePreview([]);
         }
 
-        const idSet = new window.Set(rulesToRemove.map((rule) => rule.id));
+        const idSet = new host.Set(rulesToRemove.map((rule) => rule.id));
         pushHistorySnapshot();
         state.rules = state.rules.filter((rule) => !idSet.has(rule.id));
         writeState();
@@ -1186,7 +1301,7 @@ export function createLayeredLoggerToolkit(
             return createRulePreview([]);
         }
 
-        const idSet = new window.Set(rulesToRemove.map((rule) => rule.id));
+        const idSet = new host.Set(rulesToRemove.map((rule) => rule.id));
         pushHistorySnapshot();
         state.rules = state.rules.filter((rule) => !idSet.has(rule.id));
         writeState();
@@ -1204,7 +1319,7 @@ export function createLayeredLoggerToolkit(
         state.rules = [];
 
         const rule: LayeredLoggerRule = {
-            createdAtMs: window.Date.now(),
+            createdAtMs: host.Date.now(),
             hits: 0,
             id: state.nextRuleId,
             kind: 'enabled',
@@ -1293,7 +1408,7 @@ export function createLayeredLoggerToolkit(
             const updatedRule: LayeredLoggerRule = {
                 ...rule,
                 hits: rule.hits + 1,
-                lastMatchedAtMs: window.Date.now(),
+                lastMatchedAtMs: host.Date.now(),
             };
             state.rules[index] = updatedRule;
             writeState();
@@ -1332,10 +1447,9 @@ export function createLayeredLoggerToolkit(
         scopes: readonly LayerScope[],
         args: readonly unknown[]
     ): void {
-        const consoleMethod = window.console[level];
-        const boundMethod = consoleMethod.bind(window.console);
         const prefixArgs = buildPrefixConsoleArgs(scopes);
-        boundMethod(...prefixArgs, ...args);
+        const consoleObject = readGlobalProperty('console');
+        pickConsoleMethod(consoleObject, level)(...prefixArgs, ...args);
     }
 
     function createLoggerWithScopes(scopes: readonly LayerScope[]): LayeredLogger {

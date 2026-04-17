@@ -1,6 +1,6 @@
 {
     "name": "@budarin/layered-infra-dev-logger",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "Infrastructure-focused dev logger toolkit for layered architectures.",
     "license": "MIT",
     "type": "module",
