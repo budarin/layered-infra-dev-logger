@@ -137,6 +137,41 @@ const manualCoreUseCaseLogger = baseLogger
 manualCoreUseCaseLogger.debug('same logger built manually with child()');
 ```
 
+### Tree root (`APP` is only one layout)
+
+The big example above uses **one** top-level key so every branch shares the same first scope tag (`[ APP ] …`). Same API, two other common shapes:
+
+**A — Single root (any name).** One first-level segment for the whole tree; it shows up in every branch’s log prefix.
+
+```ts
+createLayeredLoggers(baseLogger, {
+    APP: {
+        alias: 'logger',
+        children: {
+            CORE: { alias: 'coreLogger', children: { USECASE: { alias: 'coreUseCaseLogger' } } },
+        },
+    },
+});
+// → [ APP ] [ CORE ] [ USECASE ] …
+```
+
+**B — Multiple roots (no shared “app” segment).** Several keys at the first level; each branch has its own prefix chain.
+
+```ts
+createLayeredLoggers(baseLogger, {
+    UI: {
+        alias: 'uiLogger',
+        children: { CONTAINER: { alias: 'uiContainerLogger' } },
+    },
+    CORE: {
+        alias: 'coreLogger',
+        children: { USECASE: { alias: 'coreUseCaseLogger' } },
+    },
+});
+// → [ UI ] [ CONTAINER ] …
+// → [ CORE ] [ USECASE ] …
+```
+
 ### Why this pattern matters
 
 - You keep one source of truth for logger config and rule state.
