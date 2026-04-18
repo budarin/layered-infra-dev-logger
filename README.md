@@ -137,6 +137,8 @@ const manualCoreUseCaseLogger = baseLogger
 manualCoreUseCaseLogger.debug('same logger built manually with child()');
 ```
 
+![Colored log output](colored-log.png)
+
 ### Tree root (`APP` is only one layout)
 
 The big example above uses **one** top-level key so every branch shares the same first scope tag (`[ APP ] …`). Same API, two other common shapes:
