@@ -137,7 +137,7 @@ const manualCoreUseCaseLogger = baseLogger
 manualCoreUseCaseLogger.debug('same logger built manually with child()');
 ```
 
-![Colored log output](colored-log.png)
+![Colored log output](https://cdn.jsdelivr.net/npm/@budarin/layered-infra-dev-logger/colored-log.png)
 
 ### Tree root (`APP` is only one layout)
 
