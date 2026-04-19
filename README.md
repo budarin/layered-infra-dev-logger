@@ -208,11 +208,21 @@ logger.remove(3);
 logger.previewRemove('[ CORE ][ * ]');
 logger.remove('[ CORE ][ * ]');
 
-// focus, reset, undo
+// “solo” one selector: baseline becomes all-disabled, rules cleared, one enable rule added
 logger.focus('[ UI ][ CONTAINER ][ * ] | debug');
+
+// baseline all-enabled again and all rules removed (factory-default filtering)
 logger.reset();
+
+// revert the last control change (focus/reset/enable/disable/show/remove/clear, …)
 logger.undo();
 ```
+
+**`focus(selector)`** — Show only logs that match this selector: it sets baseline to **all-disabled**, drops every existing rule, then adds a single **enabled** rule for `selector`. Handy in the console when you want one branch (for example UI under `CONTAINER`) without turning off many `disable` rules by hand.
+
+**`reset()`** — Restore the default filter state: baseline **all-enabled** and an empty rule list (nothing explicitly disabled).
+
+**`undo()`** — Pop one entry from the control history and restore the previous baseline + rules. History is recorded for `focus`, `reset`, `enable`, `disable`, `remove`, `clear`, and for baseline flips when `enable`/`disable` is called with the `*` selector.
 
 ## Advanced Options (optional)
 
